@@ -19,6 +19,8 @@ def main():
               [sg.T("")], [sg.Text("If applicable, select the MARCXML file containing your MARC records (a single XML "
                                    "file with multiple records): "),
                            sg.Input(key="-IN8-", change_submits=True), sg.FileBrowse(key="-IN7-")], [sg.T("")],
+              [sg.Text("If applicable, select the folder containing your Dublin Core (.xml) files: "),
+                           sg.Input(key="-IN10-", change_submits=True), sg.FolderBrowse(key="-IN9-")]
               [sg.Submit()]]
 
     window = sg.Window('Library Description Audit Setup', layout)
@@ -47,8 +49,12 @@ def main():
                 marcxml_path = 'NONE'
             else:
                 marcxml_path = values["-IN7-"]
+            if not values["-IN9-"] and not values['-IN10-']:
+                dc_path = 'NONE'
+            else:
+                dc_path = values["-IN10-"]
             window.close()
-            ret = [lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path, marcxml_path]
+            ret = [lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path, marcxml_path, dc_path]
             return ret
             # TODO: Area of expansion for next version--add in visualizations that show breakdown of match location,
             #  type, etc. that are produced and shown in GUI after matching is complete
