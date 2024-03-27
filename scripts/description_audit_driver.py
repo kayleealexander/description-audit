@@ -41,6 +41,9 @@ def file_soup_maker(source_path, file_type):
     if source_path.endswith(".xml") and file_type == "MARCXML":
         soup = BeautifulSoup(open(source_path, 'r', encoding='utf-8'), features='lxml', from_encoding='utf-8')
         entries = soup.find_all('record')
+    elif source_path.endswith(".xml") and file_type == "DublinCore":
+        soup = BeautifulSoup(open(source_path, 'r', encoding='utf-8'), features='lxml', from_encoding='utf-8')
+        entries = soup.find_all('metadata')
     else:
         # TODO: This is the last major bottleneck--how to access all of these entries faster?
         entries = [BeautifulSoup(open(os.path.join(path, name), encoding="utf-8"), features="lxml",
@@ -75,9 +78,12 @@ def entry_parser(entry, structure_type):
     """
     if structure_type == "EAD":
         return ead_entry_parser(entry)
-    else:
+    elif structure_type == "MARCXML":
         return marc_entry_parser(entry)
-
+    elif structure_type == "DublinCore":
+        return dc_entry_parser(entry)
+    else:
+        return None
 
 def ead_entry_parser(entry):
     """
@@ -184,6 +190,23 @@ def marc_entry_parser(entry):
     return entry_data
 
 
+def dc_entry_parser(entry):
+    """
+    Parses relevant information from BeautifulSoup object for a Dublin Core metadata entry into a dictionary
+    :param entry: BeautifulSoup object for Dublin Core metadata
+    :return: entry_data: Keyed dictionary containing pertinent information about Dublin Core metadata for NLP analysis
+    """
+    entry_data = dict()
+    if entry.find('title'):
+        entry_data["title"] = entry.find('title').text.strip()
+    else:
+        entry_data["title"] = 'NULL'
+    
+    if entry.find('creator'):
+        entry_data["creator"] = entry.find('creator').text.strip()
+    else:
+        entry_data["creator"] = 'NULL'
+
 def nlp_matcher(matcher, entry_data, structure_type):
     """
     Uses spaCy rule-based phrase matchers to identify presence of terms in specific fields of entry and adds match data
@@ -282,18 +305,17 @@ def build_csv(output_path, result_struct, file_type, lexicon_test, hatebase_incl
     Creates and writes to CSV using results of NLP matching and data structure of entries.
     :param output_path: (String) file directory path in which created CSV should be stored
     :param result_struct: (list of dicts) data structure containing pertinent information about each entry in archival
-    structure and its matches to terms in the lexicon
-    :param file_type: (String) type of archival structure, EAD or MARCXML, which was searched and is now being reported
-    in CSV format. This determines headings of CSV/keys to access.
+                          structure and its matches to terms in the lexicon
+    :param file_type: (String) type of archival structure, EAD, MARC, or DublinCore, which was searched and is now being
+                      reported in CSV format. This determines headings of CSV/keys to access.
     :param lexicon_test: (String) identifies rules being used to detect matches. Used in title of CSV.
     :return: None: this function writes to a CSV file but does not return any data.
     """
     print("CSV writer has been called")
-    if file_type == "EAD":
-        header = ["eadid", "bibnumber", "collection_title", "match_type", "match_term", "context_snippet", "match_rule"]
+    if file_type == "DublinCore":
+        header = ["title", "creator", "match_type", "match_term", "context_snippet", "match_rule"]
     else:
-        header = ["oclc_num", "bibnumber", "last_update", "creator", "title", "extent", "match_type", "terms",
-                  "context_snippets", "rule_ids"]
+        header = ["Some_other_header"]
     rows = []
     if hatebase_include:
         hatebase = "HB"
@@ -302,43 +324,24 @@ def build_csv(output_path, result_struct, file_type, lexicon_test, hatebase_incl
     with open(output_path + "/" + file_type + "_" + lexicon_test + "_" + hatebase + "_nlp_report.csv", 'wt', newline='',
               encoding='utf-8') as csvout:
         for library_item in result_struct:
-            if file_type == "EAD":
-                repeated_data = [library_item["eadid"],  library_item["bibnumber"],
-                                 library_item["collection_title"]]
-            if file_type == "MARCXML":
-                repeated_data = [library_item["oclc_num"], library_item["bib_num"], library_item["last_update"],
-                                 library_item["creator"], library_item["title"], library_item["extent"]]
-            if "nlp_results_notes" in library_item.keys():
-                [rows.append(list(chain.from_iterable([repeated_data, [library_item["nlp_results_notes"]["type"],
-                                                    library_item["nlp_results_notes"]["terms"][count],
-                                                    library_item["nlp_results_notes"]["context_snippets"][count],
-                                                    library_item["nlp_results_notes"]["rule_ids"][count]]])))
-                 for count, value in enumerate(library_item["nlp_results_notes"]["terms"])]
-            if "nlp_results_title" in library_item.keys():
-                [rows.append(list(chain.from_iterable([repeated_data, [library_item["nlp_results_title"]["type"],
-                                                    library_item["nlp_results_title"]["terms"][count],
-                                                    library_item["nlp_results_title"]["context_snippets"][count],
-                                                    library_item["nlp_results_title"]["rule_ids"][count]]])))
-                 for count, value in enumerate(library_item["nlp_results_title"]["terms"])]
-            if "nlp_results_summary" in library_item.keys():
-                [rows.append(list(chain.from_iterable([repeated_data, [library_item["nlp_results_summary"]["type"],
-                                                    library_item["nlp_results_summary"]["terms"][count],
-                                                    library_item["nlp_results_summary"]["context_snippets"][count],
-                                                    library_item["nlp_results_summary"]["rule_ids"][count]]])))
-                 for count, value in enumerate(library_item["nlp_results_summary"]["terms"])]
-            if "nlp_results_bionote" in library_item.keys():
-                [rows.append(list(chain.from_iterable([repeated_data, [library_item["nlp_results_bionote"]["type"],
-                                                    library_item["nlp_results_bionote"]["terms"][count],
-                                                    library_item["nlp_results_bionote"]["context_snippets"][count],
-                                                    library_item["nlp_results_bionote"]["rule_ids"][count]]])))
-                 for count, value in enumerate(library_item["nlp_results_bionote"]["terms"])]
+            if file_type == "DublinCore":
+                repeated_data = [library_item["title"], library_item["creator"]]
+                # Include other fields from Dublin Core metadata as needed
+                # Adjust this part based on the fields you want to include
+                if "nlp_results_notes" in library_item.keys():
+                    [rows.append(list(chain.from_iterable([repeated_data, [library_item["nlp_results_notes"]["type"],
+                                                        library_item["nlp_results_notes"]["terms"][count],
+                                                        library_item["nlp_results_notes"]["context_snippets"][count],
+                                                        library_item["nlp_results_notes"]["rule_ids"][count]]])))
+                     for count, value in enumerate(library_item["nlp_results_notes"]["terms"])]
+                # Include other types of matches (title, summary, etc.) as needed
+            # Include other types of metadata (EAD, MARCXML) handling as needed
         writer = csv.writer(csvout)
         writer.writerow(header)
         writer.writerows(rows)
         return
 
-
-def main(lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path, marcxml_path):
+def main(lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path, marcxml_path, dc_path):
     """
     Once main arguments have been collected, access raw data, process, and produce outputs that enumerate matches to
     given lexicons
@@ -352,6 +355,7 @@ def main(lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path
     :param output_path: (String) folder path where
     :param ead_path:
     :param marcxml_path:
+    :param dc_path:
     :return: exit status 0 or raise exception
     """
     matcher = PhraseMatcher(nlp.vocab, attr='LOWER')
@@ -368,4 +372,8 @@ def main(lexicon_csv_path, lexicon_test, hatebase_include, output_path, ead_path
         marc_record_list = file_soup_maker(marcxml_path, "MARCXML")
         searched_marc_structure = structure_builder(marc_record_list, matcher, "MARCXML")
         build_csv(output_path, searched_marc_structure, "MARCXML", lexicon_test, hatebase_include)
+    if dc_path != "NONE":
+        dc_record_list = file_soup_maker(dc_path, "Dublin Core")
+        searched_dc_structure = structure_builder(dc_record_list, matcher, "Dublin Core")
+        build_csv(output_path, searched_dc_structure, "Dublin Core", lexicon_test, hatebase_include)
     return 0
